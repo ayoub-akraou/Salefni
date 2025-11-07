@@ -5,6 +5,7 @@ function App() {
 	return (
 		<BrowserRouter>
 			<Routes>
+				<Route path="/" element={<LoanSimulation />} />
 				<Route path="/loan-simulation" element={<LoanSimulation />} />
 			</Routes>
 		</BrowserRouter>
