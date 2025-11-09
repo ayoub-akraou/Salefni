@@ -6,33 +6,39 @@ export default function SimulationPage() {
 	const {
 		register,
 		handleSubmit,
+		watch,
+		setValue,
 		formState: { errors },
+		clearErrors,
 	} = useForm();
 
-    const [creditTypeSelect, setCreditTypeSelect] = useState("");
-    const [annualRate, setAnnualRate] = useState("");
-    const [fees, setFees] = useState("");
-    const [insuranceRate, setInsuranceRate] = useState("");
-	const [maxMonths, setMaxMonths] = useState(Infinity);
-	const [amount, setAmount] = useState(0);
-	const [minAmount, setMinAmount] = useState(0);
-	const [maxAmount, setMaxAmount] = useState(Infinity);
- 	const { creditTypes } = useAppData();
+	const { creditTypes } = useAppData();
 
-	
-	
- useEffect(() => {
-    const creditType = creditTypes.find((type) => type.id === creditTypeSelect);
-    
-    if(creditType) {
-      setAnnualRate(creditType.defaultAnnualRate);
-      setFees(creditType.defaultFees);
-      setInsuranceRate(creditType.defaultInsuranceRate);
-      setMaxMonths(creditType.maxMonths);
-      setMinAmount(creditType.minAmount);
-      setMaxAmount(creditType.maxAmount);
-    }
- }, [creditTypeSelect]);
+	const initialCreditType = {
+		defaultAnnualRate: 0,
+		defaultFees: 0,
+		defaultInsuranceRate: 0,
+		maxMonths: Infinity,
+		minAmount: 0,
+		maxAmount: Infinity,
+	};
+
+	const [creditType, setCreditType] = useState(initialCreditType);
+
+	useEffect(() => {
+		clearErrors();
+		const selectedCreditType = creditTypes.find((type) => type.id === watch("creditType"));
+
+		if (selectedCreditType) {
+			setCreditType(selectedCreditType);
+			setValue("annualRate", selectedCreditType.defaultAnnualRate);
+			setValue("fees", selectedCreditType.defaultFees);
+			setValue("insuranceRate", selectedCreditType.defaultInsuranceRate);
+		} else {
+			setCreditType(initialCreditType);
+		}
+		console.log(watch("creditType"));
+	}, [watch("creditType")]);
 
 	const [results, setResults] = useState({
 		monthlyPayment: null,
@@ -43,32 +49,36 @@ export default function SimulationPage() {
 
 	// Fonction de calcul
 	const onSubmit = (data) => {
-		const amount = Number(data.montant);
-		const months = Number(data.duree);
-		const monthlyRate = annualRate / 12;
+		console.log(data);
+		const amount = Number(data.amount);
+		const months = Number(data.months);
+		const annualRate = Number(data.annualRate) / 100; // Convertir le pourcentage en décimal
+		const monthlyRate = annualRate / 12; // Taux mensuel en décimal
 		const fees = Number(data.fees);
+		const insuranceRate = Number(data.insuranceRate) / 100 / 12; // Taux d'assurance mensuel en décimal
 
-		// mensualité sans assurance
-		const monthlyPayment =
-			(amount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -months));
+		// Mensualité sans assurance (formule de remboursement d'emprunt)
+		const monthlyPayment = (amount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -months));
 
-		// assurance mensuelle
+		// Assurance mensuelle (taux appliqué au capital emprunté)
 		const insuranceMonthly = amount * insuranceRate;
 
-		// mensualité totale
+		// Mensualité totale
 		const globalMonthlyPayment = monthlyPayment + insuranceMonthly;
 
-		// coût total
-		const totalCost = globalMonthlyPayment * months + fees;
+		// Coût total du crédit
+		const totalCost = monthlyPayment * months + insuranceMonthly * months + fees;
 
-		// TAEG simplifié
-		const apr = (totalCost / amount / (months / 12)) * 100;
+		// TAEG (Taux Annuel Effectif Global) - approximation
+		const totalInterests = monthlyPayment * months - amount;
+		const totalInsurance = insuranceMonthly * months;
+		const taeg = ((totalInterests + totalInsurance + fees) / amount) * (12 / months) * 100;
 
-		// tableau d’amortissement
+		// Tableau d'amortissement
 		let remaining = amount;
 		let amortization = [];
 
-		for (let month = 1; month <= 3; month++) {
+		for (let month = 1; month <= Math.min(months, 3); month++) {
 			const interest = remaining * monthlyRate;
 			const principal = monthlyPayment - interest;
 			const insurance = insuranceMonthly;
@@ -82,14 +92,14 @@ export default function SimulationPage() {
 				principal: principal.toFixed(2),
 				insurance: insurance.toFixed(2),
 				monthly: payment.toFixed(2),
-				remaining: remaining > 0 ? remaining.toFixed(2) : "0.00",
+				remaining: remaining > 0 ? Math.max(0, remaining).toFixed(2) : "0.00",
 			});
 		}
 
 		setResults({
 			monthlyPayment: globalMonthlyPayment.toFixed(2),
 			totalCost: totalCost.toFixed(2),
-			apr: apr.toFixed(2),
+			apr: taeg.toFixed(2),
 			amortization,
 		});
 	};
@@ -109,7 +119,6 @@ export default function SimulationPage() {
 			{/* MAIN */}
 			<main className="max-w-7xl mx-auto px-6 py-12">
 				<div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
 					{/* FORMULAIRE */}
 					<section className="bg-zinc-900 rounded-2xl border border-zinc-800 p-8">
 						<h2 className="text-3xl font-bold mb-8">Informations du crédit</h2>
@@ -117,15 +126,10 @@ export default function SimulationPage() {
 						<form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
 							{/* Type */}
 							<div>
-								<label className="block text-sm font-semibold text-zinc-300 mb-3">
-									Type de crédit
-								</label>
+								<label className="block text-sm font-semibold text-zinc-300 mb-3">Type de crédit</label>
 								<select
-									{...register("typeCredit", { required: "Le type de crédit est requis" })}
-									className="w-full px-4 py-3 bg-black border border-zinc-700 rounded-xl"
-									value={creditTypeSelect}
-									onChange={(e) => setCreditTypeSelect(e.target.value)}
-                                >
+									{...register("creditType", { required: "Le type de crédit est requis" })}
+									className="w-full px-4 py-3 bg-black border border-zinc-700 rounded-xl">
 									<option value="">Sélectionnez un type</option>
 									{creditTypes.map((type) => (
 										<option key={type.id} value={type.id}>
@@ -133,9 +137,7 @@ export default function SimulationPage() {
 										</option>
 									))}
 								</select>
-								{errors.typeCredit && (
-									<p className="text-red-400 text-sm mt-2">{errors.typeCredit.message}</p>
-								)}
+								{errors.creditType && <p className="text-red-400 text-sm mt-2">{errors.creditType.message}</p>}
 							</div>
 
 							{/* Montant */}
@@ -143,11 +145,19 @@ export default function SimulationPage() {
 								<label className="block text-sm font-semibold text-zinc-300 mb-3">Montant (MAD)</label>
 								<input
 									type="number"
-									{...register("amount", { required: "Le montant est requis" ,})}
+									{...register("amount", {
+										required: "Le montant est requis",
+										min: {
+											value: creditType.minAmount,
+											message: `Montant minimum : ${creditType.minAmount}`,
+										},
+										max: {
+											value: creditType.maxAmount,
+											message: `Montant maximum : ${creditType.maxAmount}`,
+										},
+									})}
 									className="input"
 									placeholder="Ex : 100000"
-									onChange={(e) => setAmount(+e.target.value)}
-									value={amount}
 								/>
 								{errors.amount && <p className="text-red-400 text-sm mt-2">{errors.amount.message}</p>}
 							</div>
@@ -157,26 +167,29 @@ export default function SimulationPage() {
 								<label className="block text-sm font-semibold text-zinc-300 mb-3">Durée (mois)</label>
 								<input
 									type="number"
-									{...register("duree", { required: "La durée est requise" })}
+									{...register("months", {
+										required: "La durée est requise",
+										min: { value: 2, message: `Durée minimum : 2 mois` },
+										max: {
+											value: creditType.maxMonths,
+											message: `Durée maximum : ${creditType.maxMonths} mois`,
+										},
+									})}
 									className="input"
 									placeholder="Ex : 48"
 								/>
-								{errors.duree && <p className="text-red-400 text-sm mt-2">{errors.duree.message}</p>}
+								{errors.months && <p className="text-red-400 text-sm mt-2">{errors.months.message}</p>}
 							</div>
 
 							{/* Taux */}
 							<div>
-								<label className="block text-sm font-semibold text-zinc-300 mb-3">
-									Taux annuel (%)
-								</label>
+								<label className="block text-sm font-semibold text-zinc-300 mb-3">Taux annuel (%)</label>
 								<input
 									type="number"
 									step="0.01"
 									{...register("annualRate", { required: "Le taux annuel est requis" })}
 									className="input"
 									placeholder="Ex : 4.5"
-                                    value={annualRate}
-                                    onChange={(e) => setAnnualRate(e.target.value)}
 								/>
 								{errors.annualRate && <p className="text-red-400 text-sm mt-2">{errors.annualRate.message}</p>}
 							</div>
@@ -189,8 +202,6 @@ export default function SimulationPage() {
 									{...register("fees", { required: "Les frais fixes sont requis" })}
 									className="input"
 									placeholder="Ex : 300"
-                                    value={fees}
-                                    onChange={(e) => setFees(e.target.value)}
 								/>
 								{errors.fees && <p className="text-red-400 text-sm mt-2">{errors.fees.message}</p>}
 							</div>
@@ -204,16 +215,16 @@ export default function SimulationPage() {
 									{...register("insuranceRate", { required: "L'assurance est requise" })}
 									className="input"
 									placeholder="Ex : 0.20"
-                                    value={insuranceRate}
-                                    onChange={(e) => setInsuranceRate(e.target.value)}
 								/>
-								{errors.insuranceRate && <p className="text-red-400 text-sm mt-2">{errors.insuranceRate.message}</p>}
+								{errors.insuranceRate && (
+									<p className="text-red-400 text-sm mt-2">{errors.insuranceRate.message}</p>
+								)}
 							</div>
 
 							<button
 								type="submit"
-								className="w-full bg-white text-black py-4 px-6 rounded-xl font-bold text-lg hover:bg-zinc-100 active:scale-95 transition"
-							>
+								onClick={() => console.error(errors)}
+								className="w-full bg-white text-black py-4 px-6 rounded-xl font-bold text-lg hover:bg-zinc-100 active:scale-95 transition">
 								Simuler
 							</button>
 						</form>
@@ -240,7 +251,9 @@ export default function SimulationPage() {
 								<thead>
 									<tr className="border-b border-zinc-800 text-xs text-zinc-500 uppercase">
 										{["Mois", "Capital", "Intérêts", "Assurance", "Mensualité", "Restant dû"].map((h) => (
-											<th key={h} className="px-4 py-4 text-left">{h}</th>
+											<th key={h} className="px-4 py-4 text-left">
+												{h}
+											</th>
 										))}
 									</tr>
 								</thead>
